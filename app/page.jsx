@@ -10,11 +10,9 @@ const ROOT_MIDI = 57; // A3
 
 function midiToFreq(m) { return 440 * Math.pow(2, (m - 69) / 12); }
 
-// map word length (1..15) onto 2 octaves of the current pentatonic scale
 function quantizeFreq(wordLen, sentiment, minMidi = ROOT_MIDI, maxMidi = ROOT_MIDI + 24) {
   const scale = sentiment >= 0 ? SCALES.major : SCALES.minor;
   const clamped = Math.min(Math.max(wordLen - 1, 0), 15);
-  // build a note ladder across the requested range
   const ladder = [];
   for (let m = minMidi; m <= maxMidi; m++) {
     const rel = ((m - ROOT_MIDI) % 12 + 12) % 12;
@@ -26,7 +24,6 @@ function quantizeFreq(wordLen, sentiment, minMidi = ROOT_MIDI, maxMidi = ROOT_MI
 
 // ─── Audio Engine ────────────────────────────────────────────────────────────
 
-// precomputed brown-noise buffer for ambient bed + whoosh events
 function makeBrownNoiseBuffer(ctx, seconds = 3) {
   const len = Math.floor(ctx.sampleRate * seconds);
   const buf = ctx.createBuffer(1, len, ctx.sampleRate);
@@ -49,18 +46,15 @@ function playTone(audio, wordLen, settings, sentiment, velocity = 1) {
   const dec = settings.decay / 1000;
   const peak = settings.volume * velocity;
 
-  // oscillator + gentle second voice an octave above for body
   const osc = ctx.createOscillator();
   osc.type = settings.waveform;
   osc.frequency.setValueAtTime(freq, now);
 
-  // per-voice lowpass — tames harshness, "mallet" character
   const lp = ctx.createBiquadFilter();
   lp.type = "lowpass";
   lp.frequency.value = Math.min(freq * 6 + 600, 4200);
   lp.Q.value = 0.6;
 
-  // stereo pan — by word length, slight random jitter
   const pan = ctx.createStereoPanner();
   const panVal = ((wordLen - 8) / 14) * 0.7 + (Math.random() - 0.5) * 0.12;
   pan.pan.value = Math.max(-0.85, Math.min(0.85, panVal));
@@ -68,7 +62,7 @@ function playTone(audio, wordLen, settings, sentiment, velocity = 1) {
   const env = ctx.createGain();
   env.gain.setValueAtTime(0, now);
   env.gain.linearRampToValueAtTime(peak, now + atk);
-  env.gain.setTargetAtTime(0, now + atk, dec / 3); // exponential-ish tail, smoother than ramp
+  env.gain.setTargetAtTime(0, now + atk, dec / 3);
   env.gain.linearRampToValueAtTime(0, now + atk + dec + 0.15);
 
   osc.connect(lp);
@@ -88,7 +82,6 @@ function playTone(audio, wordLen, settings, sentiment, velocity = 1) {
   return freq;
 }
 
-// soft filtered noise burst — sentence punctuation gets a breath
 function playWhoosh(audio, noiseBuf, intensity = 1) {
   const { ctx, master, delayIn } = audio;
   if (!ctx || !master || !noiseBuf) return;
@@ -127,7 +120,7 @@ function playWhoosh(audio, noiseBuf, intensity = 1) {
   src.stop(now + 0.55);
 }
 
-// ─── Sentiment (simple keyword approach) ─────────────────────────────────────
+// ─── Sentiment ───────────────────────────────────────────────────────────────
 const POS_WORDS = new Set(["beautiful","wonderful","amazing","great","excellent","love","joy","happy","brilliant","fantastic","good","best","perfect","delightful","remarkable","elegant","extraordinary","breathtaking","fascinating"]);
 const NEG_WORDS = new Set(["dark","shadow","danger","fear","terrible","awful","bad","wrong","destroy","fail","struggle","problem","difficult","impossible","conflict","war","death","chaos","collapse","broken"]);
 
@@ -141,30 +134,36 @@ function scoreSentiment(words) {
   return Math.max(-1, Math.min(1, score / Math.max(words.length * 0.15, 1)));
 }
 
-// ─── Sample texts ────────────────────────────────────────────────────────────
+// ─── Gutenberg helpers ───────────────────────────────────────────────────────
+function stripGutenbergBoilerplate(raw) {
+  let start = raw.indexOf("*** START OF THE PROJECT GUTENBERG EBOOK");
+  if (start === -1) start = raw.indexOf("*** START OF THIS PROJECT GUTENBERG EBOOK");
+  if (start !== -1) {
+    const nl = raw.indexOf("\n", start);
+    raw = raw.slice(nl + 1);
+  }
+  let end = raw.indexOf("*** END OF THE PROJECT GUTENBERG EBOOK");
+  if (end === -1) end = raw.indexOf("*** END OF THIS PROJECT GUTENBERG EBOOK");
+  if (end !== -1) raw = raw.slice(0, end);
+  return raw.trim();
+}
+
+// ─── Sample texts (fallback for chat mode) ───────────────────────────────────
 const SAMPLES = [
   `The quick brown fox jumps over the lazy dog. Extraordinarily, this pangram contains every single letter of the alphabet — a typographical curiosity beloved by designers, cryptographers, and font enthusiasts worldwide.
 
 Photosynthesis is a remarkable biochemical process. Chlorophyll molecules absorb electromagnetic radiation and convert it into adenosine triphosphate. Simultaneously, carbon dioxide and water molecules are transformed into glucose and oxygen through a breathtakingly complex cascade of enzymatic reactions.
 
-Melancholy. Serendipity. Ephemeral. Perseverance. Quintessential. These words carry weight, texture, history. Compare them to: it, a, to, is, be, of, in — small but indispensable, the connective tissue of language.
-
-Jazz musicians improvise spontaneously within harmonic frameworks. A saxophonist might navigate a ii-V-I progression in bebop style, weaving chromatically between chord tones and approach notes at blistering tempos.
-
 She ran. He sat. It rained. Birds sang. Time passed. Leaves fell. Stars appeared. Night deepened. Dreams began. Then — silence.`,
 
   `Quantum entanglement describes a phenomenon where particles become correlated such that the quantum state of each cannot be described independently. Einstein called this spooky action at a distance.
 
-Architecture balances structure and poetry. Brutalism celebrates raw concrete muscularity. Bauhaus strips everything to function. Deconstructivism deliberately fragments and destabilizes. Each style is a philosophical argument made physical.
-
 Rain patters. Wind howls. Thunder rumbles. Lightning crackles. Hail hammers. Snow whispers. Fog drifts. Dew settles. The weather is always doing something wonderful to language.
 
-Neurons fire. Synapses transmit. Neurotransmitters diffuse across the synaptic cleft. Receptor proteins change conformation. Ion channels open. Membrane potential shifts. A thought occurs.
-
-Supercalifragilisticexpialidocious. Antidisestablishmentarianism. Incomprehensibilities. Floccinaucinihilipilification. These behemoths lumber through sentences like prehistoric creatures, dark and impossible to ignore.`,
+Neurons fire. Synapses transmit. Neurotransmitters diffuse across the synaptic cleft. Receptor proteins change conformation. Ion channels open. Membrane potential shifts. A thought occurs.`,
 ];
 
-// ─── Knob ────────────────────────────────────────────────────────────────────
+// ─── Sub-components ──────────────────────────────────────────────────────────
 function Knob({ label, value, min, max, step = 1, onChange, fmt }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
@@ -177,7 +176,6 @@ function Knob({ label, value, min, max, step = 1, onChange, fmt }) {
   );
 }
 
-// ─── Waveform sidebar strip ──────────────────────────────────────────────────
 function WaveformSidebar({ densityHistory }) {
   const max = Math.max(...densityHistory, 1);
   return (
@@ -198,7 +196,6 @@ function WaveformSidebar({ densityHistory }) {
   );
 }
 
-// ─── Animated word span ──────────────────────────────────────────────────────
 function WordSpan({ word, isRare, delay }) {
   const [visible, setVisible] = useState(false);
   useEffect(() => {
@@ -223,7 +220,8 @@ function WordSpan({ word, isRare, delay }) {
 
 // ─── Main ────────────────────────────────────────────────────────────────────
 export default function StreamInstrument() {
-  const [phase, setPhase] = useState("unlock"); // unlock | chat
+  const [phase, setPhase] = useState("unlock"); // unlock | app
+  const [mode, setMode] = useState("library"); // chat | library
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState("");
   const [streaming, setStreaming] = useState(false);
@@ -236,6 +234,17 @@ export default function StreamInstrument() {
   const [densityHistory, setDensityHistory] = useState([]);
   const [tokenCount, setTokenCount] = useState(0);
 
+  // library
+  const [bookQuery, setBookQuery] = useState("");
+  const [bookResults, setBookResults] = useState([]);
+  const [bookLoading, setBookLoading] = useState(false);
+  const [activeBook, setActiveBook] = useState(null); // { title, author, text, wordTokens }
+  const [readPosition, setReadPosition] = useState(0); // index into wordTokens
+  const [displayedText, setDisplayedText] = useState("");
+  const [reading, setReading] = useState(false);
+  const [paused, setPaused] = useState(false);
+  const [readSpeed, setReadSpeed] = useState(200); // WPM
+
   // settings
   const [settings, setSettings] = useState({
     minFreq: 60, maxFreq: 380, attack: 12, decay: 260,
@@ -247,7 +256,7 @@ export default function StreamInstrument() {
   const audioCtxRef = useRef(null);
   const gainRef = useRef(null);
   const delayInRef = useRef(null);
-  const padRef = useRef(null); // { oscs, filter, gain, mode }
+  const padRef = useRef(null);
   const noiseBufRef = useRef(null);
   const bedGainRef = useRef(null);
   const lastToneTimeRef = useRef(0);
@@ -256,16 +265,28 @@ export default function StreamInstrument() {
   const streamWordsRef = useRef([]);
   const streamStartRef = useRef(null);
   const messagesEndRef = useRef(null);
+  const readerEndRef = useRef(null);
   const settingsRef = useRef(settings);
   settingsRef.current = settings;
   sentimentRef.current = sentimentVal;
 
-  useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
+  // reader control refs (so the loop can check without re-render)
+  const pausedRef = useRef(false);
+  const readingRef = useRef(false);
+  const readSpeedRef = useRef(200);
+  const readPositionRef = useRef(0);
+  pausedRef.current = paused;
+  readingRef.current = reading;
+  readSpeedRef.current = readSpeed;
+  readPositionRef.current = readPosition;
 
+  useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
+  useEffect(() => { readerEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [displayedText]);
+
+  // ── Audio setup ──
   function unlock() {
     const ctx = new (window.AudioContext || window.webkitAudioContext)();
 
-    // ── master limiter (catches peaks so fast streams never stab) ──
     const comp = ctx.createDynamicsCompressor();
     comp.threshold.value = -16;
     comp.knee.value = 14;
@@ -278,7 +299,6 @@ export default function StreamInstrument() {
     master.gain.value = 0.85;
     master.connect(comp);
 
-    // ── delay bus (lowpassed feedback — never gets harsh) ──
     const delayIn = ctx.createGain();
     delayIn.gain.value = 1;
     const delay = ctx.createDelay(1.5);
@@ -298,7 +318,6 @@ export default function StreamInstrument() {
     delayLp.connect(delayOut);
     delayOut.connect(master);
 
-    // ── ambient brown-noise bed (always-on acoustic floor) ──
     const noiseBuf = makeBrownNoiseBuffer(ctx, 4);
     const bedSrc = ctx.createBufferSource();
     bedSrc.buffer = noiseBuf;
@@ -317,7 +336,6 @@ export default function StreamInstrument() {
     bedLp.connect(bedGain);
     bedGain.connect(master);
     bedSrc.start();
-    // fade in to idle whisper
     bedGain.gain.linearRampToValueAtTime(0.018, ctx.currentTime + 2.5);
 
     audioCtxRef.current = ctx;
@@ -325,7 +343,7 @@ export default function StreamInstrument() {
     delayInRef.current = delayIn;
     noiseBufRef.current = noiseBuf;
     bedGainRef.current = bedGain;
-    setPhase("chat");
+    setPhase("app");
   }
 
   // ── Pad ──
@@ -334,12 +352,12 @@ export default function StreamInstrument() {
     const master = gainRef.current;
     if (!ctx || !master || padRef.current) return;
 
-    const mode = sentiment >= 0 ? "major" : "minor";
-    const scale = SCALES[mode];
-    const rootMidi = ROOT_MIDI - 12; // one octave below tone root
+    const m = sentiment >= 0 ? "major" : "minor";
+    const scale = SCALES[m];
+    const rootMidi = ROOT_MIDI - 12;
     const rootFreq = midiToFreq(rootMidi);
     const fifthFreq = midiToFreq(rootMidi + 7);
-    const thirdFreq = midiToFreq(rootMidi + scale[2]); // mode-defining note
+    const thirdFreq = midiToFreq(rootMidi + scale[2]);
 
     const filter = ctx.createBiquadFilter();
     filter.type = "lowpass";
@@ -364,14 +382,13 @@ export default function StreamInstrument() {
     const oscs = [
       mkOsc("sawtooth", rootFreq, -6),
       mkOsc("sawtooth", rootFreq, +6),
-      mkOsc("sine",     fifthFreq, 0),
-      mkOsc("sine",     thirdFreq, 0),
+      mkOsc("sine", fifthFreq, 0),
+      mkOsc("sine", thirdFreq, 0),
     ];
 
     filter.connect(gain);
     gain.connect(master);
 
-    // light send to delay bus
     if (delayInRef.current) {
       const send = ctx.createGain();
       send.gain.value = 0.18;
@@ -379,7 +396,7 @@ export default function StreamInstrument() {
       send.connect(delayInRef.current);
     }
 
-    padRef.current = { oscs, filter, gain, mode, rootMidi };
+    padRef.current = { oscs, filter, gain, mode: m, rootMidi };
   }
 
   function stopPad() {
@@ -394,7 +411,6 @@ export default function StreamInstrument() {
     padRef.current = null;
   }
 
-  // pad filter cutoff tracks streaming velocity
   useEffect(() => {
     const pad = padRef.current;
     const ctx = audioCtxRef.current;
@@ -404,7 +420,6 @@ export default function StreamInstrument() {
     pad.filter.frequency.linearRampToValueAtTime(cutoff, ctx.currentTime + 0.25);
   }, [wpm]);
 
-  // sentiment re-tunes pad's mode-defining voice (major <-> minor)
   useEffect(() => {
     const pad = padRef.current;
     const ctx = audioCtxRef.current;
@@ -414,12 +429,34 @@ export default function StreamInstrument() {
     const scale = SCALES[nextMode];
     const thirdFreq = midiToFreq(pad.rootMidi + scale[2]);
     const now = ctx.currentTime;
-    // oscs[3] is the mode-defining voice
     pad.oscs[3].frequency.cancelScheduledValues(now);
     pad.oscs[3].frequency.linearRampToValueAtTime(thirdFreq, now + 1.2);
     pad.mode = nextMode;
   }, [sentimentVal]);
 
+  // bed swell
+  function swellBed() {
+    const ctx = audioCtxRef.current;
+    if (ctx && bedGainRef.current && settingsRef.current.bed) {
+      const g = bedGainRef.current.gain;
+      g.cancelScheduledValues(ctx.currentTime);
+      g.setValueAtTime(g.value, ctx.currentTime);
+      g.linearRampToValueAtTime(0.042, ctx.currentTime + 1.2);
+    }
+  }
+  function unswellBed() {
+    const ctx = audioCtxRef.current;
+    if (ctx && bedGainRef.current) {
+      const g = bedGainRef.current.gain;
+      g.cancelScheduledValues(ctx.currentTime);
+      g.setValueAtTime(g.value, ctx.currentTime);
+      g.linearRampToValueAtTime(0.018, ctx.currentTime + 2.0);
+    }
+  }
+
+  const getAudio = () => ({ ctx: audioCtxRef.current, master: gainRef.current, delayIn: delayInRef.current });
+
+  // ── fireWord (shared by chat + reader) ──
   const fireWord = useCallback((word) => {
     const s = settingsRef.current;
     const clean = word.replace(/[^a-zA-Z]/g, "");
@@ -427,7 +464,6 @@ export default function StreamInstrument() {
     const len = clean.length;
 
     if (s.sonic) {
-      // rate limit — if retriggering within 35ms, attenuate so fast streams don't machine-gun
       const nowMs = performance.now();
       const dt = nowMs - lastToneTimeRef.current;
       let velocity = 1;
@@ -435,10 +471,7 @@ export default function StreamInstrument() {
       else if (dt < 70) velocity = 0.7;
       lastToneTimeRef.current = nowMs;
 
-      const freq = playTone(
-        { ctx: audioCtxRef.current, master: gainRef.current, delayIn: delayInRef.current },
-        len, s, sentimentRef.current, velocity
-      );
+      const freq = playTone(getAudio(), len, s, sentimentRef.current, velocity);
       if (freq) {
         setActiveFreq(Math.round(freq));
         setTimeout(() => setActiveFreq(null), 180);
@@ -449,18 +482,23 @@ export default function StreamInstrument() {
     setDensityHistory(h => [...h, len]);
     setTokenCount(c => c + 1);
 
-    // wpm
     const now = Date.now();
     if (!streamStartRef.current) streamStartRef.current = now;
     const elapsed = (now - streamStartRef.current) / 60000;
     setWpm(Math.round(streamWordsRef.current.length / Math.max(elapsed, 0.001)));
 
-    // sentiment on every 5 words
     if (streamWordsRef.current.length % 5 === 0 && s.sentiment) {
       setSentimentVal(scoreSentiment(streamWordsRef.current.slice(-30)));
     }
   }, []);
 
+  const fireWhsp = useCallback((char) => {
+    if (".!?\n".includes(char) && settingsRef.current.sonic && settingsRef.current.whoosh) {
+      playWhoosh(getAudio(), noiseBufRef.current, char === "\n" ? 0.7 : 1);
+    }
+  }, []);
+
+  // ── Chat send (sample text) ──
   async function send() {
     if (!input.trim() || streaming) return;
     const userMsg = input.trim();
@@ -475,15 +513,7 @@ export default function StreamInstrument() {
     wordBufRef.current = "";
 
     if (settingsRef.current.pad) startPad(sentimentRef.current);
-
-    // swell the ambient bed louder while a stream is active
-    const ctx = audioCtxRef.current;
-    if (ctx && bedGainRef.current && settingsRef.current.bed) {
-      const g = bedGainRef.current.gain;
-      g.cancelScheduledValues(ctx.currentTime);
-      g.setValueAtTime(g.value, ctx.currentTime);
-      g.linearRampToValueAtTime(0.042, ctx.currentTime + 1.2);
-    }
+    swellBed();
 
     const text = SAMPLES[Math.floor(Math.random() * SAMPLES.length)];
     const chars = text.split("");
@@ -503,17 +533,10 @@ export default function StreamInstrument() {
         fullText += chunk;
 
         for (const char of chunk) {
-          if (" \n,.!?—–".includes(char)) {
+          if (" \n,.!?;:—–".includes(char)) {
             if (wordBufRef.current.trim()) fireWord(wordBufRef.current);
             wordBufRef.current = "";
-            // sentence enders get a soft breath
-            if (".!?\n".includes(char) && settingsRef.current.sonic && settingsRef.current.whoosh) {
-              playWhoosh(
-                { ctx: audioCtxRef.current, master: gainRef.current, delayIn: delayInRef.current },
-                noiseBufRef.current,
-                char === "\n" ? 0.7 : 1
-              );
-            }
+            fireWhsp(char);
           } else {
             wordBufRef.current += char;
           }
@@ -531,18 +554,123 @@ export default function StreamInstrument() {
     });
 
     stopPad();
-    // drop bed back to idle whisper
-    if (ctx && bedGainRef.current) {
-      const g = bedGainRef.current.gain;
-      g.cancelScheduledValues(ctx.currentTime);
-      g.setValueAtTime(g.value, ctx.currentTime);
-      g.linearRampToValueAtTime(0.018, ctx.currentTime + 2.0);
-    }
+    unswellBed();
     setStreaming(false);
     setWpm(0);
   }
 
-  // sentiment → background tint
+  // ── Gutenberg search ──
+  async function searchBooks() {
+    if (!bookQuery.trim()) return;
+    setBookLoading(true);
+    setBookResults([]);
+    try {
+      const res = await fetch(`https://gutendex.com/books/?search=${encodeURIComponent(bookQuery.trim())}&languages=en`);
+      const data = await res.json();
+      setBookResults(
+        (data.results || []).slice(0, 15).map(b => ({
+          id: b.id,
+          title: b.title,
+          author: b.authors?.[0]?.name || "Unknown",
+          textUrl:
+            b.formats["text/plain; charset=utf-8"]
+            || b.formats["text/plain"]
+            || b.formats["text/plain; charset=us-ascii"]
+            || null,
+        })).filter(b => b.textUrl)
+      );
+    } catch (e) {
+      console.error("Search failed:", e);
+    }
+    setBookLoading(false);
+  }
+
+  async function loadBook(book) {
+    setBookLoading(true);
+    try {
+      const res = await fetch(book.textUrl);
+      const raw = await res.text();
+      const cleaned = stripGutenbergBoilerplate(raw);
+      const wordTokens = cleaned.split(/(\s+)/); // preserves whitespace
+      setActiveBook({ title: book.title, author: book.author, text: cleaned, wordTokens });
+      setReadPosition(0);
+      setDisplayedText("");
+    } catch (e) {
+      console.error("Failed to load book:", e);
+    }
+    setBookLoading(false);
+  }
+
+  // ── Book reader loop ──
+  async function startReading() {
+    if (!activeBook || reading) return;
+    setReading(true);
+    readingRef.current = true;
+    streamWordsRef.current = [];
+    streamStartRef.current = null;
+    setWpm(0);
+    setSentimentVal(0);
+    setTokenCount(0);
+
+    if (settingsRef.current.pad) startPad(sentimentRef.current);
+    swellBed();
+
+    const { wordTokens } = activeBook;
+    let pos = readPositionRef.current;
+    let builtText = wordTokens.slice(0, pos).join("");
+
+    while (pos < wordTokens.length && readingRef.current) {
+      // pause loop
+      while (pausedRef.current && readingRef.current) {
+        await new Promise(r => setTimeout(r, 100));
+      }
+      if (!readingRef.current) break;
+
+      const token = wordTokens[pos];
+      builtText += token;
+      pos++;
+
+      const isWhitespace = /^\s+$/.test(token);
+      if (!isWhitespace) {
+        fireWord(token);
+        // check for sentence endings within the token
+        const lastChar = token.slice(-1);
+        fireWhsp(lastChar);
+      } else if (token.includes("\n")) {
+        fireWhsp("\n");
+      }
+
+      setReadPosition(pos);
+      readPositionRef.current = pos;
+      setDisplayedText(builtText);
+
+      // delay based on current speed — only wait after real words
+      if (!isWhitespace) {
+        const msPerWord = 60000 / readSpeedRef.current;
+        // add slight natural variance (+-15%)
+        const jitter = msPerWord * (0.85 + Math.random() * 0.3);
+        await new Promise(r => setTimeout(r, jitter));
+      }
+    }
+
+    stopPad();
+    unswellBed();
+    setReading(false);
+    readingRef.current = false;
+    setWpm(0);
+  }
+
+  function stopReading() {
+    readingRef.current = false;
+    setReading(false);
+    setPaused(false);
+  }
+
+  function togglePause() {
+    setPaused(p => !p);
+  }
+
+  // ── Render helpers ──
   const sentHue = sentimentVal >= 0
     ? `rgba(40, ${20 + sentimentVal * 30}, 0, ${Math.abs(sentimentVal) * 0.18})`
     : `rgba(0, 0, ${30 + Math.abs(sentimentVal) * 40}, ${Math.abs(sentimentVal) * 0.18})`;
@@ -560,20 +688,28 @@ export default function StreamInstrument() {
       );
     }
     const tokens = raw.split(/(\s+)/);
-    let delay = 0;
     return (
       <>
         {tokens.map((tok, i) => {
           if (/^\s+$/.test(tok)) return <span key={i}>{tok}</span>;
           const clean = tok.replace(/[^a-zA-Z]/g, "");
           const isRare = clean.length >= 9;
-          const d = delay;
-          return <WordSpan key={i} word={tok} isRare={isRare && settings.rarityGlow} delay={d} />;
+          return <WordSpan key={i} word={tok} isRare={isRare && settings.rarityGlow} delay={0} />;
         })}
         {isStreaming && <span style={{ display: "inline-block", width: 2, height: 13, background: "#e8c547", marginLeft: 2, verticalAlign: "middle", animation: "blink 0.7s step-end infinite" }} />}
       </>
     );
   }
+
+  const progress = activeBook ? Math.round((readPosition / activeBook.wordTokens.length) * 100) : 0;
+
+  // ── Tab button helper ──
+  const tabStyle = (active) => ({
+    fontSize: 10, fontFamily: "'IBM Plex Mono', monospace", padding: "5px 14px",
+    borderRadius: 3, cursor: "pointer", letterSpacing: "0.08em", border: "none",
+    background: active ? "#1a1400" : "transparent",
+    color: active ? "#e8c547" : "#444",
+  });
 
   return (
     <>
@@ -593,7 +729,6 @@ export default function StreamInstrument() {
         color: "#c8c0b0", display: "flex", flexDirection: "column", maxWidth: 820, margin: "0 auto",
         position: "relative", overflow: "hidden",
       }}>
-        {/* sentiment background layer */}
         <div style={{
           position: "fixed", inset: 0, background: sentHue,
           transition: "background 2s ease", pointerEvents: "none", zIndex: 0,
@@ -607,14 +742,14 @@ export default function StreamInstrument() {
             <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 52, letterSpacing: "0.06em", color: "#e8c547", lineHeight: 1 }}>STREAM INSTRUMENT</div>
             <div style={{ width: 48, height: 1, background: "#2a2a2a" }} />
             <div style={{ fontSize: 11, color: "#444", lineHeight: 1.8, maxWidth: 380, letterSpacing: "0.04em" }}>
-              Every word that arrives from an AI stream carries signal — length, rhythm, rarity, sentiment. This interface makes all of it audible and visible.
+              Every word carries signal — length, rhythm, rarity, sentiment. Read books from Project Gutenberg through a sonic interface that makes text audible and visible.
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 8, fontSize: 10, color: "#333", letterSpacing: "0.06em" }}>
+              <div>◈ LIBRARY — search + stream any Gutenberg book</div>
               <div>◈ SONIC — word length → pentatonic pitch</div>
-              <div>◈ PAD — sentiment bends major/minor, wpm opens the filter</div>
+              <div>◈ PAD — sentiment bends major/minor, speed opens the filter</div>
+              <div>◈ SPEED — control your reading pace in real time</div>
               <div>◈ GLOW — rare words illuminate on arrival</div>
-              <div>◈ DRIFT — sentiment shifts the background</div>
-              <div>◈ WAVEFORM — density fingerprint sidebar</div>
             </div>
             <button onClick={unlock} style={{
               marginTop: 8, background: "#e8c547", border: "none", borderRadius: 4,
@@ -630,14 +765,18 @@ export default function StreamInstrument() {
               padding: "14px 20px", borderBottom: "1px solid #141414",
               display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexShrink: 0,
             }}>
-              <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 22, letterSpacing: "0.08em", color: "#e8c547" }}>
-                STREAM INSTRUMENT
+              <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+                <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 22, letterSpacing: "0.08em", color: "#e8c547" }}>
+                  STREAM INSTRUMENT
+                </div>
+                <div style={{ display: "flex", gap: 2 }}>
+                  <button onClick={() => !streaming && !reading && setMode("library")} style={tabStyle(mode === "library")}>LIBRARY</button>
+                  <button onClick={() => !streaming && !reading && setMode("chat")} style={tabStyle(mode === "chat")}>CHAT</button>
+                </div>
               </div>
 
-              {/* meters row */}
+              {/* meters */}
               <div style={{ display: "flex", gap: 16, alignItems: "center", flex: 1, justifyContent: "center" }}>
-
-                {/* Freq */}
                 <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
                   <span style={{ fontSize: 8, letterSpacing: "0.14em", color: "#333", textTransform: "uppercase" }}>freq</span>
                   <span style={{
@@ -645,30 +784,21 @@ export default function StreamInstrument() {
                     transition: "color 0.15s", fontVariantNumeric: "tabular-nums", minWidth: 56, textAlign: "center",
                   }}>{activeFreq ? `${activeFreq}Hz` : "·  ·  ·"}</span>
                 </div>
-
                 <div style={{ width: 1, height: 24, background: "#1a1a1a" }} />
-
-                {/* WPM */}
                 <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
                   <span style={{ fontSize: 8, letterSpacing: "0.14em", color: "#333", textTransform: "uppercase" }}>w/min</span>
                   <span style={{ fontSize: 13, color: wpm > 0 ? "#e8c547" : "#222", fontVariantNumeric: "tabular-nums", minWidth: 40, textAlign: "center" }}>
                     {wpm > 0 ? wpm : "—"}
                   </span>
                 </div>
-
                 <div style={{ width: 1, height: 24, background: "#1a1a1a" }} />
-
-                {/* Tokens */}
                 <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
                   <span style={{ fontSize: 8, letterSpacing: "0.14em", color: "#333", textTransform: "uppercase" }}>tokens</span>
                   <span style={{ fontSize: 13, color: tokenCount > 0 ? "#888" : "#222", fontVariantNumeric: "tabular-nums", minWidth: 36, textAlign: "center" }}>
                     {tokenCount > 0 ? tokenCount : "—"}
                   </span>
                 </div>
-
                 <div style={{ width: 1, height: 24, background: "#1a1a1a" }} />
-
-                {/* Sentiment bar */}
                 <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
                   <span style={{ fontSize: 8, letterSpacing: "0.14em", color: "#333", textTransform: "uppercase" }}>mood</span>
                   <div style={{ width: 64, height: 6, background: "#111", borderRadius: 3, overflow: "hidden", position: "relative" }}>
@@ -744,36 +874,135 @@ export default function StreamInstrument() {
               </div>
             )}
 
-            {/* ── Chat + sidebar ── */}
+            {/* ── Content + sidebar ── */}
             <div style={{ display: "flex", flex: 1, overflow: "hidden" }}>
-              {/* Messages */}
-              <div style={{ flex: 1, overflowY: "auto", padding: "20px 20px 20px 20px", display: "flex", flexDirection: "column", gap: 16 }}>
-                {messages.length === 0 && (
-                  <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8, color: "#222", fontSize: 11, letterSpacing: "0.08em", textAlign: "center", paddingTop: 60 }}>
-                    <div style={{ fontSize: 32, marginBottom: 4 }}>◈</div>
-                    <div>send a message to begin streaming</div>
-                    <div style={{ fontSize: 9, color: "#1a1a1a", marginTop: 4 }}>try asking for a story, explanation, or anything long-form</div>
-                  </div>
-                )}
-                {messages.map((msg, i) => (
-                  <div key={i} style={{ display: "flex", flexDirection: "column", gap: 4, alignSelf: msg.role === "user" ? "flex-end" : "flex-start", maxWidth: "85%", animation: "fadeUp 0.2s ease" }}>
-                    <span style={{ fontSize: 8, letterSpacing: "0.14em", textTransform: "uppercase", color: msg.role === "user" ? "#3a3000" : "#2a2a2a", alignSelf: msg.role === "user" ? "flex-end" : "flex-start" }}>
-                      {msg.role}
-                    </span>
-                    <div style={{
-                      padding: "10px 14px", borderRadius: 6, fontSize: 12.5, lineHeight: 1.72,
-                      background: msg.role === "user" ? "#101400" : "#0e0e0e",
-                      border: `1px solid ${msg.role === "user" ? "#1e2200" : "#161616"}`,
-                      color: msg.role === "user" ? "#b8c880" : "#c0b8a8",
-                      whiteSpace: "pre-wrap",
-                    }}>
-                      {msg.role === "assistant"
-                        ? renderAssistantContent(msg.raw || "", streaming && i === messages.length - 1)
-                        : msg.content}
+              <div style={{ flex: 1, overflowY: "auto", padding: 20, display: "flex", flexDirection: "column", gap: 16 }}>
+
+                {/* ════════════ LIBRARY MODE ════════════ */}
+                {mode === "library" && !activeBook && (
+                  <>
+                    {/* search bar */}
+                    <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+                      <input
+                        style={{
+                          flex: 1, background: "#0d0d0d", border: "1px solid #1a1a1a", borderRadius: 5,
+                          color: "#c0b8a8", fontFamily: "'IBM Plex Mono', monospace", fontSize: 12,
+                          padding: "10px 13px", outline: "none",
+                        }}
+                        placeholder="search Project Gutenberg…"
+                        value={bookQuery}
+                        onChange={e => setBookQuery(e.target.value)}
+                        onKeyDown={e => { if (e.key === "Enter") searchBooks(); }}
+                      />
+                      <button onClick={searchBooks} disabled={bookLoading} style={{
+                        background: "#e8c547", border: "none", borderRadius: 5,
+                        color: "#080808", fontFamily: "'Bebas Neue', sans-serif",
+                        fontSize: 15, letterSpacing: "0.08em", padding: "10px 20px", cursor: "pointer",
+                        opacity: bookLoading ? 0.5 : 1,
+                      }}>SEARCH</button>
                     </div>
-                  </div>
-                ))}
-                <div ref={messagesEndRef} />
+
+                    {bookLoading && (
+                      <div style={{ color: "#333", fontSize: 11, letterSpacing: "0.06em", textAlign: "center", padding: 20 }}>searching…</div>
+                    )}
+
+                    {bookResults.length === 0 && !bookLoading && (
+                      <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8, color: "#222", fontSize: 11, letterSpacing: "0.08em", textAlign: "center", paddingTop: 60 }}>
+                        <div style={{ fontSize: 32, marginBottom: 4 }}>◈</div>
+                        <div>search for a book to begin reading</div>
+                        <div style={{ fontSize: 9, color: "#1a1a1a", marginTop: 4 }}>try "frankenstein", "pride and prejudice", "moby dick"</div>
+                      </div>
+                    )}
+
+                    {bookResults.map((book) => (
+                      <button key={book.id} onClick={() => loadBook(book)} style={{
+                        display: "flex", flexDirection: "column", gap: 4, padding: "14px 16px",
+                        background: "#0d0d0d", border: "1px solid #1a1a1a", borderRadius: 6,
+                        textAlign: "left", cursor: "pointer", animation: "fadeUp 0.2s ease",
+                        width: "100%",
+                      }}>
+                        <span style={{ fontSize: 12.5, color: "#c0b8a8", lineHeight: 1.4 }}>{book.title}</span>
+                        <span style={{ fontSize: 10, color: "#444", letterSpacing: "0.04em" }}>{book.author}</span>
+                      </button>
+                    ))}
+                  </>
+                )}
+
+                {/* ════════════ LIBRARY — READER ════════════ */}
+                {mode === "library" && activeBook && (
+                  <>
+                    {/* book header */}
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8 }}>
+                      <div>
+                        <div style={{ fontSize: 14, color: "#c0b8a8", lineHeight: 1.4, marginBottom: 2 }}>{activeBook.title}</div>
+                        <div style={{ fontSize: 10, color: "#444", letterSpacing: "0.04em" }}>{activeBook.author}</div>
+                      </div>
+                      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                        <span style={{ fontSize: 10, color: "#333", fontVariantNumeric: "tabular-nums" }}>{progress}%</span>
+                        <button onClick={() => { stopReading(); setActiveBook(null); setDisplayedText(""); setReadPosition(0); }} style={{
+                          fontSize: 9, fontFamily: "inherit", padding: "4px 10px", borderRadius: 2, cursor: "pointer",
+                          border: "1px solid #1e1e1e", background: "#0f0f0f", color: "#444", letterSpacing: "0.06em",
+                        }}>CLOSE</button>
+                      </div>
+                    </div>
+
+                    {/* progress bar */}
+                    <div style={{ height: 2, background: "#111", borderRadius: 1, marginBottom: 12, flexShrink: 0 }}>
+                      <div style={{ height: "100%", background: "#e8c547", borderRadius: 1, width: `${progress}%`, transition: "width 0.3s" }} />
+                    </div>
+
+                    {/* reading pane */}
+                    <div style={{
+                      flex: 1, fontSize: 13.5, lineHeight: 1.85, color: "#c0b8a8",
+                      whiteSpace: "pre-wrap", letterSpacing: "0.01em",
+                    }}>
+                      {settings.wordAnim ? (
+                        <>
+                          {displayedText.split(/(\s+)/).map((tok, i) => {
+                            if (/^\s+$/.test(tok)) return <span key={i}>{tok}</span>;
+                            const clean = tok.replace(/[^a-zA-Z]/g, "");
+                            const isRare = clean.length >= 9;
+                            return <WordSpan key={i} word={tok} isRare={isRare && settings.rarityGlow} delay={0} />;
+                          })}
+                        </>
+                      ) : displayedText}
+                      {reading && <span style={{ display: "inline-block", width: 2, height: 14, background: "#e8c547", marginLeft: 2, verticalAlign: "middle", animation: "blink 0.7s step-end infinite" }} />}
+                      <div ref={readerEndRef} />
+                    </div>
+                  </>
+                )}
+
+                {/* ════════════ CHAT MODE ════════════ */}
+                {mode === "chat" && (
+                  <>
+                    {messages.length === 0 && (
+                      <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8, color: "#222", fontSize: 11, letterSpacing: "0.08em", textAlign: "center", paddingTop: 60 }}>
+                        <div style={{ fontSize: 32, marginBottom: 4 }}>◈</div>
+                        <div>send a message to begin streaming</div>
+                        <div style={{ fontSize: 9, color: "#1a1a1a", marginTop: 4 }}>try asking for a story, explanation, or anything long-form</div>
+                      </div>
+                    )}
+                    {messages.map((msg, i) => (
+                      <div key={i} style={{ display: "flex", flexDirection: "column", gap: 4, alignSelf: msg.role === "user" ? "flex-end" : "flex-start", maxWidth: "85%", animation: "fadeUp 0.2s ease" }}>
+                        <span style={{ fontSize: 8, letterSpacing: "0.14em", textTransform: "uppercase", color: msg.role === "user" ? "#3a3000" : "#2a2a2a", alignSelf: msg.role === "user" ? "flex-end" : "flex-start" }}>
+                          {msg.role}
+                        </span>
+                        <div style={{
+                          padding: "10px 14px", borderRadius: 6, fontSize: 12.5, lineHeight: 1.72,
+                          background: msg.role === "user" ? "#101400" : "#0e0e0e",
+                          border: `1px solid ${msg.role === "user" ? "#1e2200" : "#161616"}`,
+                          color: msg.role === "user" ? "#b8c880" : "#c0b8a8",
+                          whiteSpace: "pre-wrap",
+                        }}>
+                          {msg.role === "assistant"
+                            ? renderAssistantContent(msg.raw || "", streaming && i === messages.length - 1)
+                            : msg.content}
+                        </div>
+                      </div>
+                    ))}
+                    <div ref={messagesEndRef} />
+                  </>
+                )}
               </div>
 
               {/* Waveform sidebar */}
@@ -783,29 +1012,84 @@ export default function StreamInstrument() {
               </div>
             </div>
 
-            {/* ── Input ── */}
-            <div style={{ padding: "14px 20px 18px", borderTop: "1px solid #111", display: "flex", gap: 10, flexShrink: 0 }}>
-              <textarea
-                style={{
-                  flex: 1, background: "#0d0d0d", border: "1px solid #1a1a1a", borderRadius: 5,
-                  color: "#c0b8a8", fontFamily: "'IBM Plex Mono', monospace", fontSize: 12,
-                  padding: "10px 13px", outline: "none", resize: "none", lineHeight: 1.55,
-                  minHeight: 40, maxHeight: 100,
-                }}
-                placeholder="send any message to trigger a sample stream…"
-                value={input}
-                onChange={e => setInput(e.target.value)}
-                onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }}
-                rows={1}
-              />
-              <button onClick={send} disabled={streaming || !input.trim()} style={{
-                background: streaming ? "#111" : "#e8c547", border: "none", borderRadius: 5,
-                color: streaming ? "#2a2a2a" : "#080808", fontFamily: "'Bebas Neue', sans-serif",
-                fontSize: 15, letterSpacing: "0.08em", padding: "10px 20px", cursor: streaming ? "not-allowed" : "pointer",
-                transition: "all 0.15s", height: 40,
-              }}>
-                {streaming ? "···" : "SEND"}
-              </button>
+            {/* ── Footer ── */}
+            <div style={{ padding: "14px 20px 18px", borderTop: "1px solid #111", flexShrink: 0 }}>
+
+              {/* ── Library footer: speed control + play/pause/stop ── */}
+              {mode === "library" && activeBook && (
+                <div style={{ display: "flex", gap: 14, alignItems: "center" }}>
+                  {/* transport buttons */}
+                  {!reading ? (
+                    <button onClick={startReading} style={{
+                      background: "#e8c547", border: "none", borderRadius: 5,
+                      color: "#080808", fontFamily: "'Bebas Neue', sans-serif",
+                      fontSize: 15, letterSpacing: "0.08em", padding: "10px 20px", cursor: "pointer", height: 40,
+                    }}>{readPosition > 0 ? "RESUME" : "READ"}</button>
+                  ) : (
+                    <div style={{ display: "flex", gap: 6 }}>
+                      <button onClick={togglePause} style={{
+                        background: paused ? "#e8c547" : "#1a1400", border: `1px solid ${paused ? "#e8c547" : "#3a3000"}`,
+                        borderRadius: 5, color: paused ? "#080808" : "#e8c547", fontFamily: "'Bebas Neue', sans-serif",
+                        fontSize: 15, letterSpacing: "0.08em", padding: "10px 16px", cursor: "pointer", height: 40,
+                      }}>{paused ? "RESUME" : "PAUSE"}</button>
+                      <button onClick={stopReading} style={{
+                        background: "#111", border: "1px solid #1e1e1e", borderRadius: 5,
+                        color: "#555", fontFamily: "'Bebas Neue', sans-serif",
+                        fontSize: 15, letterSpacing: "0.08em", padding: "10px 16px", cursor: "pointer", height: 40,
+                      }}>STOP</button>
+                    </div>
+                  )}
+
+                  {/* speed slider */}
+                  <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 3 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <span style={{ fontSize: 9, letterSpacing: "0.12em", textTransform: "uppercase", color: "#444" }}>reading speed</span>
+                      <span style={{ fontSize: 10, color: "#666", fontVariantNumeric: "tabular-nums" }}>{readSpeed} w/min</span>
+                    </div>
+                    <input type="range" min={40} max={600} step={10} value={readSpeed}
+                      onChange={e => setReadSpeed(Number(e.target.value))}
+                      style={{ width: "100%", accentColor: "#e8c547", cursor: "pointer" }} />
+                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 8, color: "#333", letterSpacing: "0.06em" }}>
+                      <span>SLOW</span>
+                      <span>FAST</span>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* ── Library footer: no book selected — just context ── */}
+              {mode === "library" && !activeBook && (
+                <div style={{ fontSize: 10, color: "#222", letterSpacing: "0.06em", textAlign: "center" }}>
+                  select a book above to begin the sonic reading experience
+                </div>
+              )}
+
+              {/* ── Chat footer ── */}
+              {mode === "chat" && (
+                <div style={{ display: "flex", gap: 10 }}>
+                  <textarea
+                    style={{
+                      flex: 1, background: "#0d0d0d", border: "1px solid #1a1a1a", borderRadius: 5,
+                      color: "#c0b8a8", fontFamily: "'IBM Plex Mono', monospace", fontSize: 12,
+                      padding: "10px 13px", outline: "none", resize: "none", lineHeight: 1.55,
+                      minHeight: 40, maxHeight: 100,
+                    }}
+                    placeholder="send any message to trigger a sample stream…"
+                    value={input}
+                    onChange={e => setInput(e.target.value)}
+                    onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }}
+                    rows={1}
+                  />
+                  <button onClick={send} disabled={streaming || !input.trim()} style={{
+                    background: streaming ? "#111" : "#e8c547", border: "none", borderRadius: 5,
+                    color: streaming ? "#2a2a2a" : "#080808", fontFamily: "'Bebas Neue', sans-serif",
+                    fontSize: 15, letterSpacing: "0.08em", padding: "10px 20px", cursor: streaming ? "not-allowed" : "pointer",
+                    transition: "all 0.15s", height: 40,
+                  }}>
+                    {streaming ? "···" : "SEND"}
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         )}
