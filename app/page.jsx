@@ -270,6 +270,7 @@ export default function StreamInstrument() {
   const [bookLoading, setBookLoading] = useState(false);
   const [activeBook, setActiveBook] = useState(null); // { title, author, text, wordTokens, chapters }
   const [showChapters, setShowChapters] = useState(false);
+  const [pasteText, setPasteText] = useState("");
   const [readPosition, setReadPosition] = useState(0); // index into wordTokens
   const [displayedText, setDisplayedText] = useState("");
   const [reading, setReading] = useState(false);
@@ -648,6 +649,17 @@ export default function StreamInstrument() {
     setBookLoading(false);
   }
 
+  function loadPastedText() {
+    const text = pasteText.trim();
+    if (!text) return;
+    const wordTokens = text.split(/(\s+)/);
+    const chapters = parseChapters(text, wordTokens);
+    const preview = text.slice(0, 40).replace(/\s+/g, " ");
+    setActiveBook({ title: preview + "…", author: "Pasted text", text, wordTokens, chapters });
+    setReadPosition(0);
+    setDisplayedText("");
+  }
+
   // ── Book reader loop ──
   async function startReading() {
     if (!activeBook || reading) return;
@@ -1011,58 +1023,35 @@ export default function StreamInstrument() {
                       </>
                     )}
 
-                    {/* Gutenberg search — secondary */}
+                    {/* paste your own text */}
                     <div style={{ marginTop: shelf.length > 0 ? 20 : 0 }}>
                       <div style={{ fontSize: 9, letterSpacing: "0.12em", textTransform: "uppercase", color: "#333", marginBottom: 8 }}>
-                        {shelf.length > 0 ? "or search gutenberg for more" : "search project gutenberg"}
+                        or paste your own text
                       </div>
-                      <div style={{ display: "flex", gap: 8 }}>
-                        <input
-                          style={{
-                            flex: 1, background: "#0d0d0d", border: "1px solid #1a1a1a", borderRadius: 5,
-                            color: "#c0b8a8", fontFamily: "'IBM Plex Mono', monospace", fontSize: 12,
-                            padding: "10px 13px", outline: "none",
-                          }}
-                          placeholder="search title or author…"
-                          value={bookQuery}
-                          onChange={e => setBookQuery(e.target.value)}
-                          onKeyDown={e => { if (e.key === "Enter") searchBooks(); }}
-                        />
-                        <button onClick={searchBooks} disabled={bookLoading} style={{
-                          background: "#e8c547", border: "none", borderRadius: 5,
-                          color: "#080808", fontFamily: "'Bebas Neue', sans-serif",
-                          fontSize: 15, letterSpacing: "0.08em", padding: "10px 20px", cursor: "pointer",
-                          opacity: bookLoading ? 0.5 : 1,
-                        }}>SEARCH</button>
-                      </div>
+                      <textarea
+                        style={{
+                          width: "100%", minHeight: 100, maxHeight: 200, background: "#0d0d0d",
+                          border: "1px solid #1a1a1a", borderRadius: 5, color: "#c0b8a8",
+                          fontFamily: "'IBM Plex Mono', monospace", fontSize: 12,
+                          padding: "10px 13px", outline: "none", resize: "vertical", lineHeight: 1.55,
+                        }}
+                        placeholder="paste any text here — an article, essay, chapter, notes…"
+                        value={pasteText}
+                        onChange={e => setPasteText(e.target.value)}
+                      />
+                      {pasteText.trim().length > 0 && (
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 8 }}>
+                          <span style={{ fontSize: 9, color: "#333" }}>
+                            {pasteText.trim().split(/\s+/).length} words
+                          </span>
+                          <button onClick={() => loadPastedText()} style={{
+                            background: "#e8c547", border: "none", borderRadius: 5,
+                            color: "#080808", fontFamily: "'Bebas Neue', sans-serif",
+                            fontSize: 15, letterSpacing: "0.08em", padding: "10px 20px", cursor: "pointer",
+                          }}>READ THIS</button>
+                        </div>
+                      )}
                     </div>
-
-                    {bookLoading && (
-                      <div style={{ color: "#333", fontSize: 11, letterSpacing: "0.06em", textAlign: "center", padding: 20 }}>loading…</div>
-                    )}
-
-                    {bookResults !== null && bookResults.length === 0 && !bookLoading && (
-                      <div style={{ color: "#333", fontSize: 11, letterSpacing: "0.06em", textAlign: "center", padding: 12 }}>
-                        no results found
-                      </div>
-                    )}
-
-                    {bookResults !== null && bookResults.length > 0 && (
-                      <>
-                        <div style={{ fontSize: 9, letterSpacing: "0.12em", textTransform: "uppercase", color: "#333", marginTop: 12, marginBottom: 4 }}>search results</div>
-                        {bookResults.map((book) => (
-                          <button key={book.id} onClick={() => loadBook(book)} disabled={bookLoading} style={{
-                            display: "flex", flexDirection: "column", gap: 4, padding: "12px 16px",
-                            background: "#0d0d0d", border: "1px solid #1a1a1a", borderRadius: 6,
-                            textAlign: "left", cursor: "pointer", animation: "fadeUp 0.2s ease",
-                            width: "100%",
-                          }}>
-                            <span style={{ fontSize: 12.5, color: "#c0b8a8", lineHeight: 1.4 }}>{book.title}</span>
-                            <span style={{ fontSize: 10, color: "#444", letterSpacing: "0.04em" }}>{book.author}</span>
-                          </button>
-                        ))}
-                      </>
-                    )}
                   </>
                 )}
 
