@@ -250,7 +250,7 @@ export default function StreamInstrument() {
     minFreq: 60, maxFreq: 380, attack: 12, decay: 260,
     volume: 0.11, waveform: "triangle",
     wordAnim: true, sentiment: true, sonic: true, rarityGlow: true,
-    pad: true, bed: true, whoosh: true,
+    pad: true, bed: true, whoosh: false,
   });
 
   const audioCtxRef = useRef(null);
@@ -336,7 +336,7 @@ export default function StreamInstrument() {
     bedLp.connect(bedGain);
     bedGain.connect(master);
     bedSrc.start();
-    bedGain.gain.linearRampToValueAtTime(0.018, ctx.currentTime + 2.5);
+    bedGain.gain.linearRampToValueAtTime(0.012, ctx.currentTime + 2.5);
 
     audioCtxRef.current = ctx;
     gainRef.current = master;
@@ -441,7 +441,7 @@ export default function StreamInstrument() {
       const g = bedGainRef.current.gain;
       g.cancelScheduledValues(ctx.currentTime);
       g.setValueAtTime(g.value, ctx.currentTime);
-      g.linearRampToValueAtTime(0.042, ctx.currentTime + 1.2);
+      g.linearRampToValueAtTime(0.016, ctx.currentTime + 3.0);
     }
   }
   function unswellBed() {
@@ -450,7 +450,7 @@ export default function StreamInstrument() {
       const g = bedGainRef.current.gain;
       g.cancelScheduledValues(ctx.currentTime);
       g.setValueAtTime(g.value, ctx.currentTime);
-      g.linearRampToValueAtTime(0.018, ctx.currentTime + 2.0);
+      g.linearRampToValueAtTime(0.012, ctx.currentTime + 3.0);
     }
   }
 
@@ -565,7 +565,8 @@ export default function StreamInstrument() {
     setBookLoading(true);
     setBookResults([]);
     try {
-      const res = await fetch(`https://gutendex.com/books/?search=${encodeURIComponent(bookQuery.trim())}&languages=en`);
+      const res = await fetch(`/api/gutenberg?search=${encodeURIComponent(bookQuery.trim())}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       setBookResults(
         (data.results || []).slice(0, 15).map(b => ({
