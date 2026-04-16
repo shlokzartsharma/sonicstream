@@ -134,6 +134,35 @@ function scoreSentiment(words) {
   return Math.max(-1, Math.min(1, score / Math.max(words.length * 0.15, 1)));
 }
 
+// ─── Chapter detection ───────────────────────────────────────────────────────
+const CHAPTER_RE = /^(chapter|book|part|act|scene|canto|letter|section|stave)\s+[\divxlc.:—\-]+.*$/i;
+const ALLCAPS_HEADING_RE = /^[A-Z][A-Z\s.:—\-']{4,60}$/;
+
+function parseChapters(text, wordTokens) {
+  const chapters = [];
+  const lines = text.split("\n");
+  let charPos = 0;
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+    const isChapter = CHAPTER_RE.test(line);
+    const isHeading = !isChapter && ALLCAPS_HEADING_RE.test(line) && line.length > 5 && line.length < 60;
+
+    if (isChapter || isHeading) {
+      // find the corresponding word token index for this character position
+      let charCount = 0;
+      let wordIdx = 0;
+      for (let w = 0; w < wordTokens.length; w++) {
+        if (charCount >= charPos) { wordIdx = w; break; }
+        charCount += wordTokens[w].length;
+      }
+      chapters.push({ label: line, charIndex: charPos, wordIndex: wordIdx });
+    }
+    charPos += lines[i].length + 1; // +1 for \n
+  }
+  return chapters;
+}
+
 // ─── Gutenberg helpers ───────────────────────────────────────────────────────
 function stripGutenbergBoilerplate(raw) {
   let start = raw.indexOf("*** START OF THE PROJECT GUTENBERG EBOOK");
@@ -239,7 +268,8 @@ export default function StreamInstrument() {
   const [bookQuery, setBookQuery] = useState("");
   const [bookResults, setBookResults] = useState(null); // null = not searched, [] = no results
   const [bookLoading, setBookLoading] = useState(false);
-  const [activeBook, setActiveBook] = useState(null); // { title, author, text, wordTokens }
+  const [activeBook, setActiveBook] = useState(null); // { title, author, text, wordTokens, chapters }
+  const [showChapters, setShowChapters] = useState(false);
   const [readPosition, setReadPosition] = useState(0); // index into wordTokens
   const [displayedText, setDisplayedText] = useState("");
   const [reading, setReading] = useState(false);
@@ -608,7 +638,8 @@ export default function StreamInstrument() {
       }
       if (!text) throw new Error("Could not load book text");
       const wordTokens = text.split(/(\s+)/);
-      setActiveBook({ title: book.title, author: book.author, text, wordTokens });
+      const chapters = parseChapters(text, wordTokens);
+      setActiveBook({ title: book.title, author: book.author, text, wordTokens, chapters });
       setReadPosition(0);
       setDisplayedText("");
     } catch (e) {
@@ -680,6 +711,21 @@ export default function StreamInstrument() {
     readingRef.current = false;
     setReading(false);
     setPaused(false);
+  }
+
+  function jumpTo(wordIndex) {
+    const wasReading = readingRef.current;
+    if (wasReading) stopReading();
+    const built = activeBook.wordTokens.slice(0, wordIndex).join("");
+    setReadPosition(wordIndex);
+    readPositionRef.current = wordIndex;
+    setDisplayedText(built);
+    streamWordsRef.current = [];
+    streamStartRef.current = null;
+    setWpm(0);
+    setSentimentVal(0);
+    setTokenCount(0);
+    setDensityHistory([]);
   }
 
   function togglePause() {
@@ -1029,19 +1075,76 @@ export default function StreamInstrument() {
                         <div style={{ fontSize: 14, color: "#c0b8a8", lineHeight: 1.4, marginBottom: 2 }}>{activeBook.title}</div>
                         <div style={{ fontSize: 10, color: "#444", letterSpacing: "0.04em" }}>{activeBook.author}</div>
                       </div>
-                      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                      <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
                         <span style={{ fontSize: 10, color: "#333", fontVariantNumeric: "tabular-nums" }}>{progress}%</span>
-                        <button onClick={() => { stopReading(); setActiveBook(null); setDisplayedText(""); setReadPosition(0); }} style={{
+                        {activeBook.chapters.length > 0 && (
+                          <button onClick={() => setShowChapters(s => !s)} style={{
+                            fontSize: 9, fontFamily: "inherit", padding: "4px 10px", borderRadius: 2, cursor: "pointer",
+                            border: `1px solid ${showChapters ? "#3a3000" : "#1e1e1e"}`,
+                            background: showChapters ? "#1a1400" : "#0f0f0f",
+                            color: showChapters ? "#e8c547" : "#444", letterSpacing: "0.06em",
+                          }}>{showChapters ? "HIDE" : `CH ${activeBook.chapters.length}`}</button>
+                        )}
+                        <button onClick={() => { stopReading(); setActiveBook(null); setDisplayedText(""); setReadPosition(0); setShowChapters(false); }} style={{
                           fontSize: 9, fontFamily: "inherit", padding: "4px 10px", borderRadius: 2, cursor: "pointer",
                           border: "1px solid #1e1e1e", background: "#0f0f0f", color: "#444", letterSpacing: "0.06em",
                         }}>CLOSE</button>
                       </div>
                     </div>
 
-                    {/* progress bar */}
-                    <div style={{ height: 2, background: "#111", borderRadius: 1, marginBottom: 12, flexShrink: 0 }}>
-                      <div style={{ height: "100%", background: "#e8c547", borderRadius: 1, width: `${progress}%`, transition: "width 0.3s" }} />
+                    {/* clickable progress bar */}
+                    <div
+                      title="Click to scrub to any position in the book"
+                      onClick={(e) => {
+                        const rect = e.currentTarget.getBoundingClientRect();
+                        const pct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+                        const targetIdx = Math.floor(pct * activeBook.wordTokens.length);
+                        jumpTo(targetIdx);
+                      }}
+                      style={{ height: 6, background: "#111", borderRadius: 3, marginBottom: 4, flexShrink: 0, cursor: "pointer", position: "relative" }}
+                    >
+                      <div style={{ height: "100%", background: "#e8c547", borderRadius: 3, width: `${progress}%`, transition: "width 0.3s", pointerEvents: "none" }} />
+                      {/* chapter markers */}
+                      {activeBook.chapters.map((ch, i) => {
+                        const pct = (ch.wordIndex / activeBook.wordTokens.length) * 100;
+                        return <div key={i} style={{
+                          position: "absolute", left: `${pct}%`, top: 0, bottom: 0, width: 1,
+                          background: "#2a2a2a", pointerEvents: "none",
+                        }} />;
+                      })}
                     </div>
+
+                    {/* chapter list */}
+                    {showChapters && (
+                      <div style={{
+                        marginBottom: 10, padding: "8px 0", maxHeight: 180, overflowY: "auto",
+                        borderBottom: "1px solid #141414", animation: "fadeUp 0.15s ease",
+                      }}>
+                        {activeBook.chapters.map((ch, i) => {
+                          const chPct = Math.round((ch.wordIndex / activeBook.wordTokens.length) * 100);
+                          const isCurrent = readPosition >= ch.wordIndex && (
+                            i === activeBook.chapters.length - 1 || readPosition < activeBook.chapters[i + 1].wordIndex
+                          );
+                          return (
+                            <button key={i} onClick={() => { jumpTo(ch.wordIndex); setShowChapters(false); }} style={{
+                              display: "flex", justifyContent: "space-between", alignItems: "center",
+                              width: "100%", padding: "6px 10px", background: "transparent", border: "none",
+                              cursor: "pointer", textAlign: "left", borderRadius: 3,
+                            }}>
+                              <span style={{
+                                fontSize: 11, letterSpacing: "0.02em", lineHeight: 1.4,
+                                color: isCurrent ? "#e8c547" : "#666",
+                              }}>
+                                {ch.label}
+                              </span>
+                              <span style={{ fontSize: 9, color: "#2a2a2a", fontVariantNumeric: "tabular-nums", marginLeft: 12, flexShrink: 0 }}>
+                                {chPct}%
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
 
                     {/* reading pane */}
                     <div style={{
