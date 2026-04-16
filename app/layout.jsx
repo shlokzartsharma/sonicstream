@@ -1,6 +1,7 @@
 export const metadata = {
   title: "SonicStream",
   description: "Sonic-enhanced LLM streaming interface",
+  icons: { icon: "/icon.svg" },
 };
 
 export default function RootLayout({ children }) {
