@@ -572,12 +572,7 @@ export default function StreamInstrument() {
           id: b.id,
           title: b.title,
           author: b.authors?.[0]?.name || "Unknown",
-          textUrl:
-            b.formats["text/plain; charset=utf-8"]
-            || b.formats["text/plain"]
-            || b.formats["text/plain; charset=us-ascii"]
-            || null,
-        })).filter(b => b.textUrl)
+        }))
       );
     } catch (e) {
       console.error("Search failed:", e);
@@ -588,10 +583,11 @@ export default function StreamInstrument() {
   async function loadBook(book) {
     setBookLoading(true);
     try {
-      const res = await fetch(book.textUrl);
+      const res = await fetch(`/api/gutenberg?id=${book.id}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const raw = await res.text();
       const cleaned = stripGutenbergBoilerplate(raw);
-      const wordTokens = cleaned.split(/(\s+)/); // preserves whitespace
+      const wordTokens = cleaned.split(/(\s+)/);
       setActiveBook({ title: book.title, author: book.author, text: cleaned, wordTokens });
       setReadPosition(0);
       setDisplayedText("");
@@ -770,14 +766,14 @@ export default function StreamInstrument() {
                   STREAM INSTRUMENT
                 </div>
                 <div style={{ display: "flex", gap: 2 }}>
-                  <button onClick={() => !streaming && !reading && setMode("library")} style={tabStyle(mode === "library")}>LIBRARY</button>
-                  <button onClick={() => !streaming && !reading && setMode("chat")} style={tabStyle(mode === "chat")}>CHAT</button>
+                  <button onClick={() => !streaming && !reading && setMode("library")} title="Search and read books from Project Gutenberg" style={tabStyle(mode === "library")}>LIBRARY</button>
+                  <button onClick={() => !streaming && !reading && setMode("chat")} title="Demo mode — type anything to hear a sample text stream" style={tabStyle(mode === "chat")}>CHAT</button>
                 </div>
               </div>
 
               {/* meters */}
               <div style={{ display: "flex", gap: 16, alignItems: "center", flex: 1, justifyContent: "center" }}>
-                <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
+                <div title="Current note frequency — each word's length picks a pitch on a pentatonic scale" style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2, cursor: "help" }}>
                   <span style={{ fontSize: 8, letterSpacing: "0.14em", color: "#333", textTransform: "uppercase" }}>freq</span>
                   <span style={{
                     fontSize: 13, color: activeFreq ? "#e8c547" : "#222",
@@ -785,21 +781,21 @@ export default function StreamInstrument() {
                   }}>{activeFreq ? `${activeFreq}Hz` : "·  ·  ·"}</span>
                 </div>
                 <div style={{ width: 1, height: 24, background: "#1a1a1a" }} />
-                <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
+                <div title="Words per minute — how fast text is arriving right now" style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2, cursor: "help" }}>
                   <span style={{ fontSize: 8, letterSpacing: "0.14em", color: "#333", textTransform: "uppercase" }}>w/min</span>
                   <span style={{ fontSize: 13, color: wpm > 0 ? "#e8c547" : "#222", fontVariantNumeric: "tabular-nums", minWidth: 40, textAlign: "center" }}>
                     {wpm > 0 ? wpm : "—"}
                   </span>
                 </div>
                 <div style={{ width: 1, height: 24, background: "#1a1a1a" }} />
-                <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
+                <div title="Total words streamed in this session" style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2, cursor: "help" }}>
                   <span style={{ fontSize: 8, letterSpacing: "0.14em", color: "#333", textTransform: "uppercase" }}>tokens</span>
                   <span style={{ fontSize: 13, color: tokenCount > 0 ? "#888" : "#222", fontVariantNumeric: "tabular-nums", minWidth: 36, textAlign: "center" }}>
                     {tokenCount > 0 ? tokenCount : "—"}
                   </span>
                 </div>
                 <div style={{ width: 1, height: 24, background: "#1a1a1a" }} />
-                <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
+                <div title="Sentiment — tracks positive vs negative words. Green = positive, blue = negative. Shifts background color and bends the pad between major and minor key." style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2, cursor: "help" }}>
                   <span style={{ fontSize: 8, letterSpacing: "0.14em", color: "#333", textTransform: "uppercase" }}>mood</span>
                   <div style={{ width: 64, height: 6, background: "#111", borderRadius: 3, overflow: "hidden", position: "relative" }}>
                     <div style={{ position: "absolute", left: "50%", top: 0, bottom: 0, width: 1, background: "#222" }} />
@@ -814,17 +810,19 @@ export default function StreamInstrument() {
                 </div>
               </div>
 
-              <button onClick={() => setShowSettings(s => !s)} style={{
-                background: showSettings ? "#1a1800" : "#111", border: `1px solid ${showSettings ? "#3a3200" : "#1e1e1e"}`,
+              <button onClick={() => setShowSettings(s => !s)} title="Open the sound design panel — works during playback" style={{
+                background: showSettings ? "#1a1800" : (reading || streaming) ? "#1a1200" : "#111",
+                border: `1px solid ${showSettings ? "#3a3200" : (reading || streaming) ? "#2a2000" : "#1e1e1e"}`,
                 color: showSettings ? "#e8c547" : "#555", fontFamily: "'IBM Plex Mono', monospace",
                 fontSize: 10, padding: "6px 12px", borderRadius: 3, cursor: "pointer", letterSpacing: "0.08em",
+                transition: "all 0.3s",
               }}>
                 {showSettings ? "CLOSE" : "TUNE ▾"}
               </button>
             </div>
 
             {/* ── Velocity bar ── */}
-            <div style={{ height: 2, background: "#0e0e0e", flexShrink: 0 }}>
+            <div title="Streaming velocity — grows with words per minute" style={{ height: 2, background: "#0e0e0e", flexShrink: 0 }}>
               <div style={{
                 height: "100%", background: "linear-gradient(90deg, #1a1400, #e8c547)",
                 width: `${Math.min(wpm / 300 * 100, 100)}%`, transition: "width 0.3s ease",
@@ -837,18 +835,31 @@ export default function StreamInstrument() {
                 background: "#0b0b0b", borderBottom: "1px solid #141414",
                 padding: "16px 20px", flexShrink: 0, animation: "fadeUp 0.18s ease",
               }}>
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "14px 20px", marginBottom: 14 }}>
+                {(reading || streaming) && (
+                  <div style={{ fontSize: 9, color: "#3a3000", letterSpacing: "0.06em", marginBottom: 12, lineHeight: 1.6 }}>
+                    changes take effect immediately — adjust while listening
+                  </div>
+                )}
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "14px 20px", marginBottom: 6 }}>
                   <Knob label="Min Hz" value={settings.minFreq} min={30} max={200} onChange={v => setSetting("minFreq", v)} fmt={v => `${v}Hz`} />
                   <Knob label="Max Hz" value={settings.maxFreq} min={150} max={800} onChange={v => setSetting("maxFreq", v)} fmt={v => `${v}Hz`} />
                   <Knob label="Decay ms" value={settings.decay} min={20} max={500} onChange={v => setSetting("decay", v)} fmt={v => `${v}ms`} />
                   <Knob label="Volume" value={settings.volume} min={0.01} max={0.5} step={0.01} onChange={v => setSetting("volume", v)} fmt={v => `${Math.round(v*100)}%`} />
                 </div>
-                <div style={{ display: "flex", gap: 20, alignItems: "flex-end" }}>
+                <div style={{ fontSize: 8, color: "#2a2a2a", letterSpacing: "0.04em", marginBottom: 14, lineHeight: 1.6 }}>
+                  controls the per-word tones. min/max Hz set the pitch range. decay is how long each note rings. volume is the overall tone loudness.
+                </div>
+                <div style={{ display: "flex", gap: 20, alignItems: "flex-end", flexWrap: "wrap" }}>
                   <div>
                     <div style={{ fontSize: 9, letterSpacing: "0.12em", textTransform: "uppercase", color: "#444", marginBottom: 6 }}>waveform</div>
                     <div style={{ display: "flex", gap: 4 }}>
-                      {["sine","triangle","sawtooth","square"].map(w => (
-                        <button key={w} onClick={() => setSetting("waveform", w)} style={{
+                      {[
+                        ["sine", "smooth, pure tone"],
+                        ["triangle", "warm, soft buzz"],
+                        ["sawtooth", "bright, buzzy edge"],
+                        ["square", "hollow, retro beep"],
+                      ].map(([w, desc]) => (
+                        <button key={w} onClick={() => setSetting("waveform", w)} title={desc} style={{
                           fontSize: 9, fontFamily: "inherit", padding: "4px 10px", borderRadius: 2, cursor: "pointer",
                           border: `1px solid ${settings.waveform === w ? "#3a3000" : "#1e1e1e"}`,
                           background: settings.waveform === w ? "#1a1400" : "#0f0f0f",
@@ -856,18 +867,32 @@ export default function StreamInstrument() {
                         }}>{w}</button>
                       ))}
                     </div>
+                    <div style={{ fontSize: 8, color: "#2a2a2a", marginTop: 6, letterSpacing: "0.04em" }}>
+                      shape of the oscillator wave — changes the timbre of each word tone
+                    </div>
                   </div>
                   <div>
                     <div style={{ fontSize: 9, letterSpacing: "0.12em", textTransform: "uppercase", color: "#444", marginBottom: 6 }}>features</div>
-                    <div style={{ display: "flex", gap: 4 }}>
-                      {[["sonic","♪ SONIC"],["pad","≈ PAD"],["bed","∿ BED"],["whoosh","~ WHOOSH"],["wordAnim","✦ ANIM"],["rarityGlow","◈ GLOW"],["sentiment","◐ MOOD"]].map(([k, label]) => (
-                        <button key={k} onClick={() => toggleSetting(k)} style={{
+                    <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+                      {[
+                        ["sonic",     "♪ SONIC",   "Per-word tones — each word plays a note based on its length"],
+                        ["pad",       "≈ PAD",     "Background drone that shifts between major and minor key with sentiment"],
+                        ["bed",       "∿ BED",     "Low brown-noise ambient floor — soft hiss that makes tones feel grounded"],
+                        ["whoosh",    "~ WHOOSH",  "Soft noise breath on sentence endings (periods, question marks)"],
+                        ["wordAnim",  "✦ ANIM",   "Fade-in animation on each word as it appears"],
+                        ["rarityGlow","◈ GLOW",    "Long/rare words (9+ letters) glow gold when they arrive"],
+                        ["sentiment", "◐ MOOD",    "Track positive vs negative words — shifts background color and pad key"],
+                      ].map(([k, label, desc]) => (
+                        <button key={k} onClick={() => toggleSetting(k)} title={desc} style={{
                           fontSize: 9, fontFamily: "inherit", padding: "4px 10px", borderRadius: 2, cursor: "pointer",
                           border: `1px solid ${settings[k] ? "#3a3000" : "#1e1e1e"}`,
                           background: settings[k] ? "#1a1400" : "#0f0f0f",
                           color: settings[k] ? "#e8c547" : "#444", letterSpacing: "0.06em",
                         }}>{label}</button>
                       ))}
+                    </div>
+                    <div style={{ fontSize: 8, color: "#2a2a2a", marginTop: 6, letterSpacing: "0.04em" }}>
+                      toggle each layer on/off — hover for details
                     </div>
                   </div>
                 </div>
@@ -1020,19 +1045,19 @@ export default function StreamInstrument() {
                 <div style={{ display: "flex", gap: 14, alignItems: "center" }}>
                   {/* transport buttons */}
                   {!reading ? (
-                    <button onClick={startReading} style={{
+                    <button onClick={startReading} title={readPosition > 0 ? "Continue reading from where you left off" : "Start streaming the book word-by-word with sound"} style={{
                       background: "#e8c547", border: "none", borderRadius: 5,
                       color: "#080808", fontFamily: "'Bebas Neue', sans-serif",
                       fontSize: 15, letterSpacing: "0.08em", padding: "10px 20px", cursor: "pointer", height: 40,
                     }}>{readPosition > 0 ? "RESUME" : "READ"}</button>
                   ) : (
                     <div style={{ display: "flex", gap: 6 }}>
-                      <button onClick={togglePause} style={{
+                      <button onClick={togglePause} title={paused ? "Continue reading" : "Freeze in place — sound sustains, pick up where you left off"} style={{
                         background: paused ? "#e8c547" : "#1a1400", border: `1px solid ${paused ? "#e8c547" : "#3a3000"}`,
                         borderRadius: 5, color: paused ? "#080808" : "#e8c547", fontFamily: "'Bebas Neue', sans-serif",
                         fontSize: 15, letterSpacing: "0.08em", padding: "10px 16px", cursor: "pointer", height: 40,
                       }}>{paused ? "RESUME" : "PAUSE"}</button>
-                      <button onClick={stopReading} style={{
+                      <button onClick={stopReading} title="Stop reading — you can resume from this position later" style={{
                         background: "#111", border: "1px solid #1e1e1e", borderRadius: 5,
                         color: "#555", fontFamily: "'Bebas Neue', sans-serif",
                         fontSize: 15, letterSpacing: "0.08em", padding: "10px 16px", cursor: "pointer", height: 40,
@@ -1041,7 +1066,7 @@ export default function StreamInstrument() {
                   )}
 
                   {/* speed slider */}
-                  <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 3 }}>
+                  <div title="Drag to change how fast words appear — affects the sound too (faster = brighter pad filter)" style={{ flex: 1, display: "flex", flexDirection: "column", gap: 3 }}>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                       <span style={{ fontSize: 9, letterSpacing: "0.12em", textTransform: "uppercase", color: "#444" }}>reading speed</span>
                       <span style={{ fontSize: 10, color: "#666", fontVariantNumeric: "tabular-nums" }}>{readSpeed} w/min</span>
@@ -1050,8 +1075,8 @@ export default function StreamInstrument() {
                       onChange={e => setReadSpeed(Number(e.target.value))}
                       style={{ width: "100%", accentColor: "#e8c547", cursor: "pointer" }} />
                     <div style={{ display: "flex", justifyContent: "space-between", fontSize: 8, color: "#333", letterSpacing: "0.06em" }}>
-                      <span>SLOW</span>
-                      <span>FAST</span>
+                      <span>40 — meditative</span>
+                      <span>600 — speed-read</span>
                     </div>
                   </div>
                 </div>
