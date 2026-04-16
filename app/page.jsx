@@ -244,14 +244,14 @@ export default function StreamInstrument() {
   const [displayedText, setDisplayedText] = useState("");
   const [reading, setReading] = useState(false);
   const [paused, setPaused] = useState(false);
-  const [readSpeed, setReadSpeed] = useState(200); // WPM
+  const [readSpeed, setReadSpeed] = useState(220); // WPM
 
   // settings
   const [settings, setSettings] = useState({
-    minFreq: 60, maxFreq: 380, attack: 12, decay: 260,
+    minFreq: 80, maxFreq: 380, attack: 12, decay: 260,
     volume: 0.11, waveform: "triangle",
-    wordAnim: true, sentiment: true, sonic: true, rarityGlow: true,
-    pad: true, bed: true, whoosh: false,
+    wordAnim: false, sentiment: true, sonic: true, rarityGlow: true,
+    pad: false, bed: true, whoosh: false,
   });
 
   const audioCtxRef = useRef(null);
@@ -861,7 +861,7 @@ export default function StreamInstrument() {
                   </div>
                 )}
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "14px 20px", marginBottom: 6 }}>
-                  <Knob label="Min Hz" value={settings.minFreq} min={30} max={200} onChange={v => setSetting("minFreq", v)} fmt={v => `${v}Hz`} />
+                  <Knob label="Min Hz" value={settings.minFreq} min={80} max={200} onChange={v => setSetting("minFreq", v)} fmt={v => `${v}Hz`} />
                   <Knob label="Max Hz" value={settings.maxFreq} min={150} max={800} onChange={v => setSetting("maxFreq", v)} fmt={v => `${v}Hz`} />
                   <Knob label="Decay ms" value={settings.decay} min={20} max={500} onChange={v => setSetting("decay", v)} fmt={v => `${v}ms`} />
                   <Knob label="Volume" value={settings.volume} min={0.01} max={0.5} step={0.01} onChange={v => setSetting("volume", v)} fmt={v => `${Math.round(v*100)}%`} />
@@ -895,13 +895,13 @@ export default function StreamInstrument() {
                     <div style={{ fontSize: 9, letterSpacing: "0.12em", textTransform: "uppercase", color: "#444", marginBottom: 6 }}>features</div>
                     <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
                       {[
-                        ["sonic",     "♪ SONIC",   "Per-word tones — each word plays a note based on its length"],
-                        ["pad",       "≈ PAD",     "Background drone that shifts between major and minor key with sentiment"],
-                        ["bed",       "∿ BED",     "Low brown-noise ambient floor — soft hiss that makes tones feel grounded"],
-                        ["whoosh",    "~ WHOOSH",  "Soft noise breath on sentence endings (periods, question marks)"],
-                        ["wordAnim",  "✦ ANIM",   "Fade-in animation on each word as it appears"],
-                        ["rarityGlow","◈ GLOW",    "Long/rare words (9+ letters) glow gold when they arrive"],
-                        ["sentiment", "◐ MOOD",    "Track positive vs negative words — shifts background color and pad key"],
+                        ["sonic",     "♪ SONIC",   "Supported — cross-modal pitch/size mappings are automatic and perceptual (Parise & Spence, 2012)"],
+                        ["pad",       "≈ PAD",     "Experimental — sentiment-to-key mapping has theoretical grounding but limited direct evidence. Continuous drone."],
+                        ["bed",       "∿ BED",     "Moderate evidence — pink/brown noise improves attention for some, especially ADHD (OHSU meta-analysis, 2024)"],
+                        ["whoosh",    "~ WHOOSH",  "Untested — no research on punctuation-triggered noise for reading. Purely aesthetic."],
+                        ["wordAnim",  "✦ ANIM",   "Weak — visual fading adds processing load with no known comprehension benefit"],
+                        ["rarityGlow","◈ GLOW",    "Theoretical — highlighting rare/long words may aid vocabulary acquisition via salience, but untested"],
+                        ["sentiment", "◐ MOOD",    "Emerging — a 2026 study found sentiment-based sonification improved comprehension during fairy tales"],
                       ].map(([k, label, desc]) => (
                         <button key={k} onClick={() => toggleSetting(k)} title={desc} style={{
                           fontSize: 9, fontFamily: "inherit", padding: "4px 10px", borderRadius: 2, cursor: "pointer",
@@ -912,9 +912,26 @@ export default function StreamInstrument() {
                       ))}
                     </div>
                     <div style={{ fontSize: 8, color: "#2a2a2a", marginTop: 6, letterSpacing: "0.04em" }}>
-                      toggle each layer on/off — hover for details
+                      toggle each layer on/off — hover for research notes
                     </div>
                   </div>
+                </div>
+                {/* focus preset */}
+                <div style={{ marginTop: 14, paddingTop: 12, borderTop: "1px solid #141414", display: "flex", alignItems: "center", gap: 12 }}>
+                  <button onClick={() => {
+                    setSettings(s => ({
+                      ...s, waveform: "sine", volume: 0.08, decay: 200,
+                      sonic: true, pad: false, bed: true, whoosh: false,
+                      wordAnim: false, rarityGlow: true, sentiment: true,
+                    }));
+                    setReadSpeed(250);
+                  }} style={{
+                    fontSize: 9, fontFamily: "inherit", padding: "5px 14px", borderRadius: 3, cursor: "pointer",
+                    border: "1px solid #2a3000", background: "#141800", color: "#a0b840", letterSpacing: "0.08em",
+                  }}>FOCUS PRESET</button>
+                  <span style={{ fontSize: 8, color: "#2a2a2a", letterSpacing: "0.04em", lineHeight: 1.5 }}>
+                    research-backed defaults — sine wave, quiet tones, 250 wpm, no drone or animation
+                  </span>
                 </div>
               </div>
             )}
@@ -1121,12 +1138,12 @@ export default function StreamInstrument() {
                       <span style={{ fontSize: 9, letterSpacing: "0.12em", textTransform: "uppercase", color: "#444" }}>reading speed</span>
                       <span style={{ fontSize: 10, color: "#666", fontVariantNumeric: "tabular-nums" }}>{readSpeed} w/min</span>
                     </div>
-                    <input type="range" min={40} max={600} step={10} value={readSpeed}
+                    <input type="range" min={40} max={350} step={10} value={readSpeed}
                       onChange={e => setReadSpeed(Number(e.target.value))}
                       style={{ width: "100%", accentColor: "#e8c547", cursor: "pointer" }} />
                     <div style={{ display: "flex", justifyContent: "space-between", fontSize: 8, color: "#333", letterSpacing: "0.06em" }}>
-                      <span>40 — meditative</span>
-                      <span>600 — speed-read</span>
+                      <span>40 — ambient</span>
+                      <span>350 — threshold</span>
                     </div>
                   </div>
                 </div>
