@@ -235,8 +235,9 @@ export default function StreamInstrument() {
   const [tokenCount, setTokenCount] = useState(0);
 
   // library
+  const [shelf, setShelf] = useState([]); // preloaded manifest
   const [bookQuery, setBookQuery] = useState("");
-  const [bookResults, setBookResults] = useState([]);
+  const [bookResults, setBookResults] = useState(null); // null = not searched, [] = no results
   const [bookLoading, setBookLoading] = useState(false);
   const [activeBook, setActiveBook] = useState(null); // { title, author, text, wordTokens }
   const [readPosition, setReadPosition] = useState(0); // index into wordTokens
@@ -282,6 +283,14 @@ export default function StreamInstrument() {
 
   useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
   useEffect(() => { readerEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [displayedText]);
+
+  // load preloaded book shelf
+  useEffect(() => {
+    fetch("/books/manifest.json")
+      .then(r => r.json())
+      .then(data => setShelf(data))
+      .catch(() => {});
+  }, []);
 
   // ── Audio setup ──
   function unlock() {
@@ -584,12 +593,22 @@ export default function StreamInstrument() {
   async function loadBook(book) {
     setBookLoading(true);
     try {
-      const res = await fetch(`/api/gutenberg?id=${book.id}`);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const raw = await res.text();
-      const cleaned = stripGutenbergBoilerplate(raw);
-      const wordTokens = cleaned.split(/(\s+)/);
-      setActiveBook({ title: book.title, author: book.author, text: cleaned, wordTokens });
+      let text;
+      // try bundled file first (instant, no network for preloaded books)
+      if (book.filename) {
+        const res = await fetch(`/books/${book.filename}`);
+        if (res.ok) text = await res.text();
+      }
+      // fall back to API proxy for Gutenberg search results
+      if (!text && book.id) {
+        const res = await fetch(`/api/gutenberg?id=${book.id}`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const raw = await res.text();
+        text = stripGutenbergBoilerplate(raw);
+      }
+      if (!text) throw new Error("Could not load book text");
+      const wordTokens = text.split(/(\s+)/);
+      setActiveBook({ title: book.title, author: book.author, text, wordTokens });
       setReadPosition(0);
       setDisplayedText("");
     } catch (e) {
@@ -907,50 +926,80 @@ export default function StreamInstrument() {
                 {/* ════════════ LIBRARY MODE ════════════ */}
                 {mode === "library" && !activeBook && (
                   <>
-                    {/* search bar */}
-                    <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
-                      <input
-                        style={{
-                          flex: 1, background: "#0d0d0d", border: "1px solid #1a1a1a", borderRadius: 5,
-                          color: "#c0b8a8", fontFamily: "'IBM Plex Mono', monospace", fontSize: 12,
-                          padding: "10px 13px", outline: "none",
-                        }}
-                        placeholder="search Project Gutenberg…"
-                        value={bookQuery}
-                        onChange={e => setBookQuery(e.target.value)}
-                        onKeyDown={e => { if (e.key === "Enter") searchBooks(); }}
-                      />
-                      <button onClick={searchBooks} disabled={bookLoading} style={{
-                        background: "#e8c547", border: "none", borderRadius: 5,
-                        color: "#080808", fontFamily: "'Bebas Neue', sans-serif",
-                        fontSize: 15, letterSpacing: "0.08em", padding: "10px 20px", cursor: "pointer",
-                        opacity: bookLoading ? 0.5 : 1,
-                      }}>SEARCH</button>
+                    {/* shelf */}
+                    {shelf.length > 0 && (
+                      <>
+                        <div style={{ fontSize: 9, letterSpacing: "0.12em", textTransform: "uppercase", color: "#333", marginBottom: 4 }}>bookshelf</div>
+                        {shelf.map((book) => (
+                          <button key={book.slug} onClick={() => loadBook(book)} disabled={bookLoading} style={{
+                            display: "flex", justifyContent: "space-between", alignItems: "center",
+                            padding: "12px 16px", background: "#0d0d0d", border: "1px solid #1a1a1a", borderRadius: 6,
+                            textAlign: "left", cursor: "pointer", width: "100%", animation: "fadeUp 0.2s ease",
+                          }}>
+                            <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+                              <span style={{ fontSize: 12.5, color: "#c0b8a8", lineHeight: 1.4 }}>{book.title}</span>
+                              <span style={{ fontSize: 10, color: "#444", letterSpacing: "0.04em" }}>{book.author}</span>
+                            </div>
+                            <span style={{ fontSize: 9, color: "#2a2a2a", fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap", marginLeft: 12 }}>
+                              {Math.round(book.wordCount / 1000)}k words
+                            </span>
+                          </button>
+                        ))}
+                      </>
+                    )}
+
+                    {/* Gutenberg search — secondary */}
+                    <div style={{ marginTop: shelf.length > 0 ? 20 : 0 }}>
+                      <div style={{ fontSize: 9, letterSpacing: "0.12em", textTransform: "uppercase", color: "#333", marginBottom: 8 }}>
+                        {shelf.length > 0 ? "or search gutenberg for more" : "search project gutenberg"}
+                      </div>
+                      <div style={{ display: "flex", gap: 8 }}>
+                        <input
+                          style={{
+                            flex: 1, background: "#0d0d0d", border: "1px solid #1a1a1a", borderRadius: 5,
+                            color: "#c0b8a8", fontFamily: "'IBM Plex Mono', monospace", fontSize: 12,
+                            padding: "10px 13px", outline: "none",
+                          }}
+                          placeholder="search title or author…"
+                          value={bookQuery}
+                          onChange={e => setBookQuery(e.target.value)}
+                          onKeyDown={e => { if (e.key === "Enter") searchBooks(); }}
+                        />
+                        <button onClick={searchBooks} disabled={bookLoading} style={{
+                          background: "#e8c547", border: "none", borderRadius: 5,
+                          color: "#080808", fontFamily: "'Bebas Neue', sans-serif",
+                          fontSize: 15, letterSpacing: "0.08em", padding: "10px 20px", cursor: "pointer",
+                          opacity: bookLoading ? 0.5 : 1,
+                        }}>SEARCH</button>
+                      </div>
                     </div>
 
                     {bookLoading && (
-                      <div style={{ color: "#333", fontSize: 11, letterSpacing: "0.06em", textAlign: "center", padding: 20 }}>searching…</div>
+                      <div style={{ color: "#333", fontSize: 11, letterSpacing: "0.06em", textAlign: "center", padding: 20 }}>loading…</div>
                     )}
 
-                    {bookResults.length === 0 && !bookLoading && (
-                      <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8, color: "#222", fontSize: 11, letterSpacing: "0.08em", textAlign: "center", paddingTop: 60 }}>
-                        <div style={{ fontSize: 32, marginBottom: 4 }}>◈</div>
-                        <div>search for a book to begin reading</div>
-                        <div style={{ fontSize: 9, color: "#1a1a1a", marginTop: 4 }}>try "frankenstein", "pride and prejudice", "moby dick"</div>
+                    {bookResults !== null && bookResults.length === 0 && !bookLoading && (
+                      <div style={{ color: "#333", fontSize: 11, letterSpacing: "0.06em", textAlign: "center", padding: 12 }}>
+                        no results found
                       </div>
                     )}
 
-                    {bookResults.map((book) => (
-                      <button key={book.id} onClick={() => loadBook(book)} style={{
-                        display: "flex", flexDirection: "column", gap: 4, padding: "14px 16px",
-                        background: "#0d0d0d", border: "1px solid #1a1a1a", borderRadius: 6,
-                        textAlign: "left", cursor: "pointer", animation: "fadeUp 0.2s ease",
-                        width: "100%",
-                      }}>
-                        <span style={{ fontSize: 12.5, color: "#c0b8a8", lineHeight: 1.4 }}>{book.title}</span>
-                        <span style={{ fontSize: 10, color: "#444", letterSpacing: "0.04em" }}>{book.author}</span>
-                      </button>
-                    ))}
+                    {bookResults !== null && bookResults.length > 0 && (
+                      <>
+                        <div style={{ fontSize: 9, letterSpacing: "0.12em", textTransform: "uppercase", color: "#333", marginTop: 12, marginBottom: 4 }}>search results</div>
+                        {bookResults.map((book) => (
+                          <button key={book.id} onClick={() => loadBook(book)} disabled={bookLoading} style={{
+                            display: "flex", flexDirection: "column", gap: 4, padding: "12px 16px",
+                            background: "#0d0d0d", border: "1px solid #1a1a1a", borderRadius: 6,
+                            textAlign: "left", cursor: "pointer", animation: "fadeUp 0.2s ease",
+                            width: "100%",
+                          }}>
+                            <span style={{ fontSize: 12.5, color: "#c0b8a8", lineHeight: 1.4 }}>{book.title}</span>
+                            <span style={{ fontSize: 10, color: "#444", letterSpacing: "0.04em" }}>{book.author}</span>
+                          </button>
+                        ))}
+                      </>
+                    )}
                   </>
                 )}
 
@@ -1086,7 +1135,7 @@ export default function StreamInstrument() {
               {/* ── Library footer: no book selected — just context ── */}
               {mode === "library" && !activeBook && (
                 <div style={{ fontSize: 10, color: "#222", letterSpacing: "0.06em", textAlign: "center" }}>
-                  select a book above to begin the sonic reading experience
+                  pick a book from the shelf or search Gutenberg for any public-domain title
                 </div>
               )}
 

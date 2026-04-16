@@ -1,0 +1,122 @@
+[
+  {
+    "id": 84,
+    "slug": "frankenstein",
+    "title": "Frankenstein",
+    "author": "Mary Shelley",
+    "filename": "frankenstein.txt",
+    "wordCount": 75042
+  },
+  {
+    "id": 1342,
+    "slug": "pride-and-prejudice",
+    "title": "Pride and Prejudice",
+    "author": "Jane Austen",
+    "filename": "pride-and-prejudice.txt",
+    "wordCount": 127359
+  },
+  {
+    "id": 11,
+    "slug": "alice-in-wonderland",
+    "title": "Alice's Adventures in Wonderland",
+    "author": "Lewis Carroll",
+    "filename": "alice-in-wonderland.txt",
+    "wordCount": 26525
+  },
+  {
+    "id": 1661,
+    "slug": "sherlock-holmes",
+    "title": "The Adventures of Sherlock Holmes",
+    "author": "Arthur Conan Doyle",
+    "filename": "sherlock-holmes.txt",
+    "wordCount": 104506
+  },
+  {
+    "id": 174,
+    "slug": "picture-of-dorian-gray",
+    "title": "The Picture of Dorian Gray",
+    "author": "Oscar Wilde",
+    "filename": "picture-of-dorian-gray.txt",
+    "wordCount": 78979
+  },
+  {
+    "id": 1232,
+    "slug": "the-prince",
+    "title": "The Prince",
+    "author": "Niccolo Machiavelli",
+    "filename": "the-prince.txt",
+    "wordCount": 49943
+  },
+  {
+    "id": 98,
+    "slug": "tale-of-two-cities",
+    "title": "A Tale of Two Cities",
+    "author": "Charles Dickens",
+    "filename": "tale-of-two-cities.txt",
+    "wordCount": 135886
+  },
+  {
+    "id": 1080,
+    "slug": "modest-proposal",
+    "title": "A Modest Proposal",
+    "author": "Jonathan Swift",
+    "filename": "modest-proposal.txt",
+    "wordCount": 3420
+  },
+  {
+    "id": 74,
+    "slug": "tom-sawyer",
+    "title": "The Adventures of Tom Sawyer",
+    "author": "Mark Twain",
+    "filename": "tom-sawyer.txt",
+    "wordCount": 70800
+  },
+  {
+    "id": 2701,
+    "slug": "moby-dick",
+    "title": "Moby Dick",
+    "author": "Herman Melville",
+    "filename": "moby-dick.txt",
+    "wordCount": 212796
+  },
+  {
+    "id": 345,
+    "slug": "dracula",
+    "title": "Dracula",
+    "author": "Bram Stoker",
+    "filename": "dracula.txt",
+    "wordCount": 161321
+  },
+  {
+    "id": 1400,
+    "slug": "great-expectations",
+    "title": "Great Expectations",
+    "author": "Charles Dickens",
+    "filename": "great-expectations.txt",
+    "wordCount": 184478
+  },
+  {
+    "id": 76,
+    "slug": "huckleberry-finn",
+    "title": "Adventures of Huckleberry Finn",
+    "author": "Mark Twain",
+    "filename": "huckleberry-finn.txt",
+    "wordCount": 111085
+  },
+  {
+    "id": 2591,
+    "slug": "grimms-fairy-tales",
+    "title": "Grimms' Fairy Tales",
+    "author": "Brothers Grimm",
+    "filename": "grimms-fairy-tales.txt",
+    "wordCount": 101111
+  },
+  {
+    "id": 16328,
+    "slug": "beowulf",
+    "title": "Beowulf",
+    "author": "Unknown",
+    "filename": "beowulf.txt",
+    "wordCount": 39170
+  }
+]
